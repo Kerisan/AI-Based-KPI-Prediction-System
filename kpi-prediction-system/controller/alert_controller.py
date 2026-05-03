@@ -192,8 +192,9 @@ async def update_alert_config(
     try:
         response = alert_service.set_alert_config(
             dataset_name=config.dataset_name,
-            threshold_percentage=config.threshold_percentage,
-            consecutive_minutes=config.consecutive_minutes,
+            upper_threshold_percentage=config.upper_threshold_percentage,
+            lower_threshold_percentage=config.lower_threshold_percentage,
+            consecutive_violations=config.consecutive_violations,
             enabled=config.enabled,
             severity=config.severity
         )
@@ -218,7 +219,7 @@ async def update_alert_config(
 async def set_alert_config_simple(
     dataset_name: str,
     threshold_percentage: float = Query(..., ge=0.1, le=100.0),
-    consecutive_minutes: int = Query(..., ge=1, le=60),
+    consecutive_violations: int = Query(..., ge=1, le=60),
     enabled: bool = Query(default=True),
     severity: AlertSeverity = Query(default=AlertSeverity.MEDIUM),
     alert_service: AlertService = Depends(get_alert_service)
@@ -228,8 +229,8 @@ async def set_alert_config_simple(
     
     Args:
         dataset_name: Dataset identifier
-        threshold_percentage: Deviation threshold
-        consecutive_minutes: Required consecutive minutes
+        threshold_percentage: Deviation threshold (applied to both upper and lower)
+        consecutive_violations: Required consecutive violations
         enabled: Alert enabled status
         severity: Alert severity level
         alert_service: Alert service instance
@@ -240,8 +241,9 @@ async def set_alert_config_simple(
     try:
         response = alert_service.set_alert_config(
             dataset_name=dataset_name,
-            threshold_percentage=threshold_percentage,
-            consecutive_minutes=consecutive_minutes,
+            upper_threshold_percentage=threshold_percentage,
+            lower_threshold_percentage=threshold_percentage,
+            consecutive_violations=consecutive_violations,
             enabled=enabled,
             severity=severity
         )

@@ -74,8 +74,7 @@ def setup_logger(
         )
     else:
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            '[%(levelname)s] : %(message)s'
         )
     
     console_handler.setFormatter(formatter)

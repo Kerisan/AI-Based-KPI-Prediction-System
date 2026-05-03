@@ -50,7 +50,8 @@ class AlertService(LoggerMixin):
     def set_alert_config(
         self,
         dataset_name: str,
-        threshold_percentage: Optional[float] = None,
+        upper_threshold_percentage: Optional[float] = None,
+        lower_threshold_percentage: Optional[float] = None,
         consecutive_violations: Optional[int] = None,
         enabled: Optional[bool] = None,
         severity: Optional[AlertSeverity] = None
@@ -60,7 +61,8 @@ class AlertService(LoggerMixin):
         
         Args:
             dataset_name: Dataset identifier
-            threshold_percentage: Deviation threshold
+            upper_threshold_percentage: Upper deviation threshold
+            lower_threshold_percentage: Lower deviation threshold
             consecutive_violations: Required consecutive violations
             enabled: Alert enabled status
             severity: Alert severity level
@@ -71,8 +73,10 @@ class AlertService(LoggerMixin):
         # Get existing config or create new
         if dataset_name in self.alert_configs:
             config = self.alert_configs[dataset_name]
-            if threshold_percentage is not None:
-                config.threshold_percentage = threshold_percentage
+            if upper_threshold_percentage is not None:
+                config.upper_threshold_percentage = upper_threshold_percentage
+            if lower_threshold_percentage is not None:
+                config.lower_threshold_percentage = lower_threshold_percentage
             if consecutive_violations is not None:
                 config.consecutive_violations = consecutive_violations
             if enabled is not None:
@@ -82,7 +86,8 @@ class AlertService(LoggerMixin):
         else:
             config = AlertConfig(
                 dataset_name=dataset_name,
-                threshold_percentage=threshold_percentage or settings.default_threshold_percentage,
+                upper_threshold_percentage=upper_threshold_percentage or settings.default_upper_threshold_percentage,
+                lower_threshold_percentage=lower_threshold_percentage or settings.default_lower_threshold_percentage,
                 consecutive_violations=consecutive_violations or settings.default_consecutive_violations,
                 enabled=enabled if enabled is not None else True,
                 severity=severity or AlertSeverity.MEDIUM
@@ -92,13 +97,14 @@ class AlertService(LoggerMixin):
         
         self.logger.info(
             f"Alert config updated for {dataset_name}: "
-            f"threshold={config.threshold_percentage}%, "
+            f"upper={config.upper_threshold_percentage}%, lower={config.lower_threshold_percentage}%, "
             f"consecutive={config.consecutive_violations} violations"
         )
         
         return AlertConfigResponse(
             dataset_name=config.dataset_name,
-            threshold_percentage=config.threshold_percentage,
+            upper_threshold_percentage=config.upper_threshold_percentage,
+            lower_threshold_percentage=config.lower_threshold_percentage,
             consecutive_violations=config.consecutive_violations,
             enabled=config.enabled,
             severity=config.severity
@@ -118,7 +124,8 @@ class AlertService(LoggerMixin):
             # Return default config
             return AlertConfig(
                 dataset_name=dataset_name,
-                threshold_percentage=settings.default_threshold_percentage,
+                upper_threshold_percentage=settings.default_upper_threshold_percentage,
+                lower_threshold_percentage=settings.default_lower_threshold_percentage,
                 consecutive_violations=settings.default_consecutive_violations,
                 enabled=True,
                 severity=AlertSeverity.MEDIUM
@@ -163,13 +170,16 @@ class AlertService(LoggerMixin):
         # Get alert configuration
         config = self.get_alert_config(dataset_name)
         
-        # Calculate deviation
+        # Calculate deviation (can be positive or negative)
         deviation = calculate_percentage_deviation(actual_value, predicted_value)
-        is_anomaly_detected = is_anomaly(
-            actual_value,
-            predicted_value,
-            config.threshold_percentage
-        )
+        
+        # Check against appropriate threshold
+        if actual_value > predicted_value:
+            # Check upper threshold
+            is_anomaly_detected = abs(deviation) > config.upper_threshold_percentage
+        else:
+            # Check lower threshold
+            is_anomaly_detected = abs(deviation) > config.lower_threshold_percentage
         
         self.logger.info(
             f"Comparison for {dataset_name}: "
@@ -196,7 +206,10 @@ class AlertService(LoggerMixin):
             alert_triggered = alert_id is not None
         else:
             # Check if we should resolve any active alerts
-            self._check_resolution(dataset_name, deviation, config.threshold_percentage)
+            self._check_resolution(dataset_name, deviation, config)
+        
+        # Determine which threshold was checked
+        threshold_used = config.upper_threshold_percentage if actual_value > predicted_value else config.lower_threshold_percentage
         
         return ComparisonResponse(
             dataset_name=dataset_name,
@@ -204,7 +217,7 @@ class AlertService(LoggerMixin):
             predicted_value=predicted_value,
             deviation_percentage=deviation,
             is_anomaly=is_anomaly_detected,
-            threshold_percentage=config.threshold_percentage,
+            threshold_percentage=threshold_used,
             timestamp=timestamp,
             alert_triggered=alert_triggered,
             alert_id=alert_id
@@ -226,19 +239,23 @@ class AlertService(LoggerMixin):
             dataset_name: Dataset identifier
             actual_value: Actual value
             predicted_value: Predicted value
-            deviation: Deviation percentage
+            deviation: Deviation percentage (positive or negative)
             timestamp: Timestamp
             config: Alert configuration
             
         Returns:
             Optional[str]: Alert ID if triggered, None otherwise
         """
+        # Determine which threshold was violated
+        threshold_violated = 'upper' if actual_value > predicted_value else 'lower'
+        
         # Add to consecutive tracking
         self.consecutive_deviations[dataset_name].append({
             'timestamp': timestamp,
             'actual': actual_value,
             'predicted': predicted_value,
-            'deviation': deviation
+            'deviation': deviation,
+            'threshold_violated': threshold_violated
         })
         
         # Keep only recent deviations (within consecutive window)
@@ -251,7 +268,7 @@ class AlertService(LoggerMixin):
         consecutive_count = len(self.consecutive_deviations[dataset_name])
         
         self.logger.debug(
-            f"Consecutive violations for {dataset_name}: {consecutive_count}/{config.consecutive_violations}"
+            f"Consecutive violations for {dataset_name}: {consecutive_count}/{config.consecutive_violations} ({threshold_violated})"
         )
         
         # Check if we should trigger an alert
@@ -272,7 +289,9 @@ class AlertService(LoggerMixin):
                     predicted_value=predicted_value,
                     deviation_percentage=deviation,
                     consecutive_violations=consecutive_count,
-                    threshold_percentage=config.threshold_percentage,
+                    upper_threshold_percentage=config.upper_threshold_percentage,
+                    lower_threshold_percentage=config.lower_threshold_percentage,
+                    threshold_violated=threshold_violated,
                     required_consecutive_violations=config.consecutive_violations,
                     triggered_at=timestamp,
                     message=format_alert_message(
@@ -315,15 +334,15 @@ class AlertService(LoggerMixin):
         self,
         dataset_name: str,
         current_deviation: float,
-        threshold: float
+        config: AlertConfig
     ) -> None:
         """
         Check if active alert should be resolved.
         
         Args:
             dataset_name: Dataset identifier
-            current_deviation: Current deviation percentage
-            threshold: Threshold percentage
+            current_deviation: Current deviation percentage (can be positive or negative)
+            config: Alert configuration with upper/lower thresholds
         """
         active_key = f"{dataset_name}_active"
         
@@ -336,8 +355,11 @@ class AlertService(LoggerMixin):
             alert.status = AlertStatus.RESOLVED
             alert.resolved_at = datetime.now()
             
+            # Determine which threshold was being violated
+            threshold_str = f"upper: {config.upper_threshold_percentage}%, lower: {config.lower_threshold_percentage}%"
+            
             self.logger.info(
-                f"✅ ALERT RESOLVED [{dataset_name}] deviation back to {current_deviation:.2f}% (threshold: {threshold}%)"
+                f"✅ ALERT RESOLVED [{dataset_name}] deviation back to {current_deviation:+.2f}% (thresholds: {threshold_str})"
             )
             
             # Send email notification
@@ -587,7 +609,9 @@ class AlertService(LoggerMixin):
                     Actual Value: {int(alert.actual_value)}
                     Predicted Value: {int(alert.predicted_value)}
                     Deviation: {alert.deviation_percentage:.2f}%
-                    Threshold: {alert.threshold_percentage:.2f}%
+                    Upper Threshold: {alert.upper_threshold_percentage:.2f}%
+                    Lower Threshold: {alert.lower_threshold_percentage:.2f}%
+                    Threshold Violated: {alert.threshold_violated}
 
                     Message: {alert.message}
 

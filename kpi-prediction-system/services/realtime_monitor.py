@@ -155,7 +155,9 @@ class KPIMonitor(LoggerMixin):
                         
                         # Check for anomaly
                         config = self.alert_service.get_alert_config(self.kpi_name)
-                        is_anomaly = deviation > config.threshold_percentage
+                        # Use appropriate threshold based on whether actual is above or below predicted
+                        threshold = config.upper_threshold_percentage if actual_value > predicted_value else config.lower_threshold_percentage
+                        is_anomaly = deviation > threshold
                 
                 except Exception as e:
                     self.logger.warning(f"Prediction failed for {self.kpi_name}: {e}")

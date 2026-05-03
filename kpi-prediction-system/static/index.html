@@ -237,13 +237,19 @@
             height: 18px;
             cursor: pointer;
         }
+
+        .threshold-info {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>🚀 KPI Prediction System</h1>
-            <p class="subtitle">Real-time monitoring and anomaly detection with 30% threshold</p>
+            <p class="subtitle">Real-time monitoring with dynamic thresholds</p>
         </div>
 
         <div class="controls">
@@ -274,8 +280,8 @@
 
     <script>
         const API_BASE = window.location.origin;
-        const THRESHOLD_PERCENTAGE = 30; // 30% threshold
         let charts = {};
+        let kpiConfigs = {}; // Store alert configs per KPI
         let autoRefreshInterval = null;
 
         // Initialize
@@ -290,6 +296,8 @@
                 const data = await response.json();
                 
                 if (data.kpis && data.kpis.length > 0) {
+                    // Load alert configs for all KPIs
+                    await loadAlertConfigs(data.kpis);
                     renderKPIs(data.kpis);
                     await refreshData();
                 } else {
@@ -303,17 +311,38 @@
             }
         }
 
+        async function loadAlertConfigs(kpis) {
+            for (const kpi of kpis) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/v1/alerts/config/${kpi}`);
+                    const config = await response.json();
+                    kpiConfigs[kpi] = config;
+                } catch (error) {
+                    console.error(`Failed to load config for ${kpi}:`, error);
+                    // Use defaults
+                    kpiConfigs[kpi] = {
+                        upper_threshold_percentage: 30.0,
+                        lower_threshold_percentage: 30.0
+                    };
+                }
+            }
+        }
+
         function renderKPIs(kpis) {
             const grid = document.getElementById('kpiGrid');
             grid.innerHTML = '';
 
             kpis.forEach(kpi => {
+                const config = kpiConfigs[kpi] || { upper_threshold_percentage: 30, lower_threshold_percentage: 30 };
                 const card = document.createElement('div');
                 card.className = 'kpi-card';
                 card.id = `kpi-${kpi}`;
                 card.innerHTML = `
                     <div class="kpi-header">
-                        <div class="kpi-title">${kpi}</div>
+                        <div>
+                            <div class="kpi-title">${kpi}</div>
+                            <div class="threshold-info">Upper: +${config.upper_threshold_percentage}% | Lower: -${config.lower_threshold_percentage}%</div>
+                        </div>
                         <div class="kpi-status inactive" id="status-${kpi}">Inactive</div>
                     </div>
                     <div class="kpi-metrics">
@@ -343,6 +372,7 @@
 
         function initChart(kpi) {
             const ctx = document.getElementById(`chart-${kpi}`).getContext('2d');
+            const config = kpiConfigs[kpi] || { upper_threshold_percentage: 30, lower_threshold_percentage: 30 };
             
             charts[kpi] = new Chart(ctx, {
                 type: 'line',
@@ -371,7 +401,7 @@
                             pointHoverRadius: 5
                         },
                         {
-                            label: 'Upper Threshold (+30%)',
+                            label: `Upper (+${config.upper_threshold_percentage}%)`,
                             data: [],
                             borderColor: '#f59e0b',
                             backgroundColor: 'transparent',
@@ -382,7 +412,7 @@
                             pointHoverRadius: 0
                         },
                         {
-                            label: 'Lower Threshold (-30%)',
+                            label: `Lower (-${config.lower_threshold_percentage}%)`,
                             data: [],
                             borderColor: '#ef4444',
                             backgroundColor: 'transparent',
@@ -531,6 +561,8 @@
             const chart = charts[kpi];
             if (!chart) return;
             
+            const config = kpiConfigs[kpi] || { upper_threshold_percentage: 30, lower_threshold_percentage: 30 };
+            
             const labels = data.map(d => {
                 const date = new Date(d.timestamp);
                 return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -539,15 +571,20 @@
             const actualData = data.map(d => d.actual_value);
             const predictedData = data.map(d => d.predicted_value);
             
-            // Calculate threshold lines based on predicted values
-            const upperThreshold = predictedData.map(p => p ? p * (1 + THRESHOLD_PERCENTAGE / 100) : null);
-            const lowerThreshold = predictedData.map(p => p ? p * (1 - THRESHOLD_PERCENTAGE / 100) : null);
+            // Calculate threshold lines based on predicted values and DYNAMIC thresholds
+            const upperThreshold = predictedData.map(p => p ? p * (1 + config.upper_threshold_percentage / 100) : null);
+            const lowerThreshold = predictedData.map(p => p ? p * (1 - config.lower_threshold_percentage / 100) : null);
             
             chart.data.labels = labels;
             chart.data.datasets[0].data = actualData;
             chart.data.datasets[1].data = predictedData;
             chart.data.datasets[2].data = upperThreshold;
             chart.data.datasets[3].data = lowerThreshold;
+            
+            // Update legend labels with current thresholds
+            chart.data.datasets[2].label = `Upper (+${config.upper_threshold_percentage}%)`;
+            chart.data.datasets[3].label = `Lower (-${config.lower_threshold_percentage}%)`;
+            
             chart.update('none');
         }
 

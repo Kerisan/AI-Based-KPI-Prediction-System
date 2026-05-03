@@ -97,12 +97,13 @@ class ComparisonResponse(BaseModel):
 class AlertConfig(BaseModel):
     """Alert configuration for a dataset."""
     dataset_name: str
-    threshold_percentage: float = Field(..., ge=0.1, le=100.0, description="Deviation threshold %")
+    upper_threshold_percentage: float = Field(..., ge=0.1, le=100.0, description="Upper deviation threshold %")
+    lower_threshold_percentage: float = Field(..., ge=0.1, le=100.0, description="Lower deviation threshold %")
     consecutive_violations: int = Field(..., ge=1, le=60, description="Required consecutive violations")
     enabled: bool = Field(default=True, description="Alert enabled status")
     severity: AlertSeverity = Field(default=AlertSeverity.MEDIUM, description="Alert severity level")
     
-    @field_validator('threshold_percentage')
+    @field_validator('upper_threshold_percentage', 'lower_threshold_percentage')
     @classmethod
     def validate_threshold(cls, v: float) -> float:
         """Validate threshold is reasonable."""
@@ -114,7 +115,8 @@ class AlertConfig(BaseModel):
 class AlertConfigResponse(BaseModel):
     """Response model for alert configuration."""
     dataset_name: str
-    threshold_percentage: float
+    upper_threshold_percentage: float
+    lower_threshold_percentage: float
     consecutive_violations: int
     enabled: bool
     severity: AlertSeverity
@@ -131,7 +133,9 @@ class Alert(BaseModel):
     predicted_value: float
     deviation_percentage: float
     consecutive_violations: int
-    threshold_percentage: float
+    upper_threshold_percentage: float
+    lower_threshold_percentage: float
+    threshold_violated: str  # 'upper' or 'lower'
     required_consecutive_violations: int
     triggered_at: datetime
     resolved_at: Optional[datetime] = None

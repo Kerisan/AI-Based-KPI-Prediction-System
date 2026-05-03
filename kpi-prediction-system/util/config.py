@@ -39,9 +39,13 @@ class Settings(BaseSettings):
     epochs: int = Field(default=50, alias="EPOCHS")
     
     # Alert Configuration
-    default_threshold_percentage: float = Field(
+    default_upper_threshold_percentage: float = Field(
         default=30.0, 
-        alias="DEFAULT_THRESHOLD_PERCENTAGE"
+        alias="DEFAULT_UPPER_THRESHOLD_PERCENTAGE"
+    )
+    default_lower_threshold_percentage: float = Field(
+        default=30.0, 
+        alias="DEFAULT_LOWER_THRESHOLD_PERCENTAGE"
     )
     default_consecutive_violations: int = Field(
         default=5, 
@@ -143,7 +147,7 @@ class Settings(BaseSettings):
             raise ValueError("Dropout must be between 0.0 and 1.0")
         return v
     
-    @field_validator("default_threshold_percentage")
+    @field_validator("default_upper_threshold_percentage", "default_lower_threshold_percentage")
     @classmethod
     def validate_threshold(cls, v: float) -> float:
         """Validate threshold percentage."""
