@@ -181,15 +181,11 @@
             color: #333;
         }
 
-        .metric-value.good {
+        .metric-value.positive {
             color: #10b981;
         }
 
-        .metric-value.warning {
-            color: #f59e0b;
-        }
-
-        .metric-value.danger {
+        .metric-value.negative {
             color: #ef4444;
         }
 
@@ -247,7 +243,7 @@
     <div class="container">
         <div class="header">
             <h1>🚀 KPI Prediction System</h1>
-            <p class="subtitle">Real-time monitoring and anomaly detection</p>
+            <p class="subtitle">Real-time monitoring and anomaly detection with 30% threshold</p>
         </div>
 
         <div class="controls">
@@ -278,6 +274,7 @@
 
     <script>
         const API_BASE = window.location.origin;
+        const THRESHOLD_PERCENTAGE = 30; // 30% threshold
         let charts = {};
         let autoRefreshInterval = null;
 
@@ -358,7 +355,9 @@
                             borderColor: '#3b82f6',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             tension: 0.4,
-                            fill: true
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
                         },
                         {
                             label: 'Predicted',
@@ -367,7 +366,31 @@
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             tension: 0.4,
                             fill: false,
-                            borderDash: [5, 5]
+                            borderDash: [5, 5],
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'Upper Threshold (+30%)',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [10, 5],
+                            fill: false,
+                            pointRadius: 0,
+                            pointHoverRadius: 0
+                        },
+                        {
+                            label: 'Lower Threshold (-30%)',
+                            data: [],
+                            borderColor: '#ef4444',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [10, 5],
+                            fill: false,
+                            pointRadius: 0,
+                            pointHoverRadius: 0
                         }
                     ]
                 },
@@ -381,7 +404,19 @@
                         },
                         tooltip: {
                             mode: 'index',
-                            intersect: false
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += Math.round(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -397,6 +432,11 @@
                             title: {
                                 display: true,
                                 text: 'Value'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return Math.round(value);
+                                }
                             }
                         }
                     }
@@ -455,24 +495,24 @@
                 if (data.data && data.data.length > 0) {
                     const latest = data.data[data.data.length - 1];
                     
-                    // Update metrics
+                    // Update metrics - SHOW WHOLE NUMBERS
                     document.getElementById(`current-${kpi}`).textContent = 
-                        latest.actual_value ? latest.actual_value.toFixed(2) : '--';
+                        latest.actual_value ? Math.round(latest.actual_value) : '--';
                     
                     document.getElementById(`predicted-${kpi}`).textContent = 
-                        latest.predicted_value ? latest.predicted_value.toFixed(2) : '--';
+                        latest.predicted_value ? Math.round(latest.predicted_value) : '--';
                     
                     const deviationEl = document.getElementById(`deviation-${kpi}`);
                     if (latest.deviation !== null && latest.deviation !== undefined) {
-                        deviationEl.textContent = `${latest.deviation.toFixed(2)}%`;
+                        const deviation = latest.deviation;
+                        const sign = deviation >= 0 ? '+' : '';
+                        deviationEl.textContent = `${sign}${deviation.toFixed(2)}%`;
                         
-                        // Color code deviation
-                        if (latest.deviation < 5) {
-                            deviationEl.className = 'metric-value good';
-                        } else if (latest.deviation < 10) {
-                            deviationEl.className = 'metric-value warning';
+                        // Color code: GREEN for positive, RED for negative
+                        if (deviation >= 0) {
+                            deviationEl.className = 'metric-value positive';
                         } else {
-                            deviationEl.className = 'metric-value danger';
+                            deviationEl.className = 'metric-value negative';
                         }
                     } else {
                         deviationEl.textContent = '--';
@@ -499,9 +539,15 @@
             const actualData = data.map(d => d.actual_value);
             const predictedData = data.map(d => d.predicted_value);
             
+            // Calculate threshold lines based on predicted values
+            const upperThreshold = predictedData.map(p => p ? p * (1 + THRESHOLD_PERCENTAGE / 100) : null);
+            const lowerThreshold = predictedData.map(p => p ? p * (1 - THRESHOLD_PERCENTAGE / 100) : null);
+            
             chart.data.labels = labels;
             chart.data.datasets[0].data = actualData;
             chart.data.datasets[1].data = predictedData;
+            chart.data.datasets[2].data = upperThreshold;
+            chart.data.datasets[3].data = lowerThreshold;
             chart.update('none');
         }
 

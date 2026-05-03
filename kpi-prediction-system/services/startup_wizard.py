@@ -67,18 +67,20 @@ class StartupWizard(LoggerMixin):
         """
         print("\n🔧 Setting up monitoring from existing models...")
         
+        # Auto-register all models with simulated data sources
         for model in models:
             kpi_name = model.dataset_name
             
-            # Ask for data source
             print(f"\n📈 KPI: {kpi_name}")
-            data_source = self._configure_data_source(kpi_name)
             
-            # Register KPI
+            # Use simulated data source for all KPIs
+            data_source = self._create_data_source(kpi_name, "1")
+            
+            # Register KPI with 60-second (1 minute) interval
             self.monitoring_service.register_kpi(
                 kpi_name=kpi_name,
                 data_source=data_source,
-                check_interval=settings.alert_check_interval,
+                check_interval=60,  # Check every minute
                 flush_interval=3600
             )
             

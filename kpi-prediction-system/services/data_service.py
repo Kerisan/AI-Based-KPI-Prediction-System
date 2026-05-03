@@ -203,6 +203,20 @@ class DataService(LoggerMixin):
         
         return X, y
     
+
+    def get_scaler_path(self, dataset_name: str) -> Path:
+        """
+        Get path to scaler file for a dataset.
+        
+        Args:
+            dataset_name: Dataset identifier
+            
+        Returns:
+            Path: Path to scaler file
+        """
+        return get_scaler_path(dataset_name)
+    
+
     def save_scaler(self, dataset_name: str, scaler: MinMaxScaler) -> str:
         """
         Save scaler to disk.

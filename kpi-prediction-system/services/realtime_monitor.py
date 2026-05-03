@@ -72,6 +72,9 @@ class KPIMonitor(LoggerMixin):
             self.logger.warning(f"Monitor for {self.kpi_name} already running")
             return
         
+        # Initialize prediction cache with historical data from CSV
+        self._initialize_prediction_cache()
+        
         self.running = True
         self.thread = threading.Thread(
             target=self._monitor_loop,
@@ -80,6 +83,35 @@ class KPIMonitor(LoggerMixin):
         )
         self.thread.start()
         self.logger.info(f"Started monitoring {self.kpi_name}")
+    
+    def _initialize_prediction_cache(self):
+        """Initialize prediction cache with last 60 values from CSV file."""
+        try:
+            if self.dataset_path.exists():
+                df = pd.read_csv(self.dataset_path)
+                
+                # Get target column name (same as kpi_name)
+                target_col = self.kpi_name
+                
+                if target_col in df.columns:
+                    # Get last 60 non-null values
+                    values = df[target_col].dropna().tail(60).tolist()
+                    
+                    # Initialize cache in prediction service
+                    for value in values:
+                        self.prediction_service.update_recent_values(self.kpi_name, value)
+                    
+                    self.logger.info(
+                        f"Initialized prediction cache for {self.kpi_name} with {len(values)} historical values"
+                    )
+                else:
+                    self.logger.warning(
+                        f"Target column '{target_col}' not found in {self.dataset_path}"
+                    )
+            else:
+                self.logger.info(f"No existing dataset found for {self.kpi_name}, starting fresh")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize prediction cache for {self.kpi_name}: {e}")
     
     def stop(self):
         """Stop monitoring."""
@@ -161,12 +193,14 @@ class KPIMonitor(LoggerMixin):
                     except Exception as e:
                         self.logger.error(f"Alert check failed for {self.kpi_name}: {e}")
                 
-                # Log current status
-                self.logger.info(
-                    f"{self.kpi_name}: actual={actual_value:.2f}, "
-                    f"predicted={predicted_value:.2f if predicted_value else 'N/A'}, "
-                    f"deviation={deviation:.2f}% if deviation else 'N/A'"
-                )
+                # Log prediction and alert status only
+                if predicted_value is not None:
+                    deviation_str = f"{deviation:.2f}%" if deviation is not None else "N/A"
+                    alert_status = "⚠️ ALERT" if is_anomaly else "✓"
+                    self.logger.info(
+                        f"[{self.kpi_name}] Actual: {int(actual_value)} | Predicted: {int(predicted_value)} | "
+                        f"Deviation: {deviation_str} | Status: {alert_status}"
+                    )
                 
                 # Flush data periodically
                 if time.time() - self.last_flush >= self.flush_interval:

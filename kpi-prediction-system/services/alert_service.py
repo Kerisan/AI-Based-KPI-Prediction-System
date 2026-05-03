@@ -51,7 +51,7 @@ class AlertService(LoggerMixin):
         self,
         dataset_name: str,
         threshold_percentage: Optional[float] = None,
-        consecutive_minutes: Optional[int] = None,
+        consecutive_violations: Optional[int] = None,
         enabled: Optional[bool] = None,
         severity: Optional[AlertSeverity] = None
     ) -> AlertConfigResponse:
@@ -61,7 +61,7 @@ class AlertService(LoggerMixin):
         Args:
             dataset_name: Dataset identifier
             threshold_percentage: Deviation threshold
-            consecutive_minutes: Required consecutive minutes
+            consecutive_violations: Required consecutive violations
             enabled: Alert enabled status
             severity: Alert severity level
             
@@ -73,8 +73,8 @@ class AlertService(LoggerMixin):
             config = self.alert_configs[dataset_name]
             if threshold_percentage is not None:
                 config.threshold_percentage = threshold_percentage
-            if consecutive_minutes is not None:
-                config.consecutive_minutes = consecutive_minutes
+            if consecutive_violations is not None:
+                config.consecutive_violations = consecutive_violations
             if enabled is not None:
                 config.enabled = enabled
             if severity is not None:
@@ -83,7 +83,7 @@ class AlertService(LoggerMixin):
             config = AlertConfig(
                 dataset_name=dataset_name,
                 threshold_percentage=threshold_percentage or settings.default_threshold_percentage,
-                consecutive_minutes=consecutive_minutes or settings.default_consecutive_minutes,
+                consecutive_violations=consecutive_violations or settings.default_consecutive_violations,
                 enabled=enabled if enabled is not None else True,
                 severity=severity or AlertSeverity.MEDIUM
             )
@@ -93,13 +93,13 @@ class AlertService(LoggerMixin):
         self.logger.info(
             f"Alert config updated for {dataset_name}: "
             f"threshold={config.threshold_percentage}%, "
-            f"consecutive={config.consecutive_minutes}min"
+            f"consecutive={config.consecutive_violations} violations"
         )
         
         return AlertConfigResponse(
             dataset_name=config.dataset_name,
             threshold_percentage=config.threshold_percentage,
-            consecutive_minutes=config.consecutive_minutes,
+            consecutive_violations=config.consecutive_violations,
             enabled=config.enabled,
             severity=config.severity
         )
@@ -119,7 +119,7 @@ class AlertService(LoggerMixin):
             return AlertConfig(
                 dataset_name=dataset_name,
                 threshold_percentage=settings.default_threshold_percentage,
-                consecutive_minutes=settings.default_consecutive_minutes,
+                consecutive_violations=settings.default_consecutive_violations,
                 enabled=True,
                 severity=AlertSeverity.MEDIUM
             )
@@ -242,7 +242,7 @@ class AlertService(LoggerMixin):
         })
         
         # Keep only recent deviations (within consecutive window)
-        max_window = config.consecutive_minutes + 5  # Keep a bit extra
+        max_window = config.consecutive_violations + 5  # Keep a bit extra
         if len(self.consecutive_deviations[dataset_name]) > max_window:
             self.consecutive_deviations[dataset_name] = \
                 self.consecutive_deviations[dataset_name][-max_window:]
@@ -251,11 +251,11 @@ class AlertService(LoggerMixin):
         consecutive_count = len(self.consecutive_deviations[dataset_name])
         
         self.logger.debug(
-            f"Consecutive deviations for {dataset_name}: {consecutive_count}/{config.consecutive_minutes}"
+            f"Consecutive violations for {dataset_name}: {consecutive_count}/{config.consecutive_violations}"
         )
         
         # Check if we should trigger an alert
-        if consecutive_count >= config.consecutive_minutes:
+        if consecutive_count >= config.consecutive_violations:
             # Check if alert already active
             active_key = f"{dataset_name}_active"
             
@@ -271,9 +271,9 @@ class AlertService(LoggerMixin):
                     actual_value=actual_value,
                     predicted_value=predicted_value,
                     deviation_percentage=deviation,
-                    consecutive_count=consecutive_count,
+                    consecutive_violations=consecutive_count,
                     threshold_percentage=config.threshold_percentage,
-                    required_consecutive=config.consecutive_minutes,
+                    required_consecutive_violations=config.consecutive_violations,
                     triggered_at=timestamp,
                     message=format_alert_message(
                         dataset_name,
@@ -287,7 +287,14 @@ class AlertService(LoggerMixin):
                 self.active_alerts[active_key] = alert
                 self.alert_history.append(alert)
                 
-                self.logger.warning(f"ALERT TRIGGERED: {alert.message}")
+                self.logger.warning(
+                    f"⚠️ ALERT STARTED [{dataset_name}] {alert.message} | "
+                    f"Actual: {int(actual_value)} | Predicted: {int(predicted_value)} | "
+                    f"Deviation: {deviation:.2f}%"
+                )
+                
+                # Send email notification
+                self._send_alert_email(alert, "STARTED")
                 
                 return alert_id
             else:
@@ -330,9 +337,11 @@ class AlertService(LoggerMixin):
             alert.resolved_at = datetime.now()
             
             self.logger.info(
-                f"ALERT RESOLVED for {dataset_name}: "
-                f"deviation back to {current_deviation:.2f}% (threshold: {threshold}%)"
+                f"✅ ALERT RESOLVED [{dataset_name}] deviation back to {current_deviation:.2f}% (threshold: {threshold}%)"
             )
+            
+            # Send email notification
+            self._send_alert_email(alert, "RESOLVED")
             
             # Move to history and remove from active
             del self.active_alerts[active_key]
@@ -523,7 +532,6 @@ class AlertService(LoggerMixin):
     def enable_alerts(self, dataset_name: str) -> None:
         """
         Enable alerts for a dataset.
-        
         Args:
             dataset_name: Dataset identifier
         """
@@ -531,3 +539,73 @@ class AlertService(LoggerMixin):
         config.enabled = True
         self.alert_configs[dataset_name] = config
         self.logger.info(f"Alerts enabled for {dataset_name}")
+
+
+    def _send_alert_email(self, alert: Alert, status: str) -> None:
+        """
+        Send email notification for alert.
+        
+        Args:
+            alert: Alert object
+            status: Alert status (STARTED or RESOLVED)
+        """
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Email configuration from settings
+            if not hasattr(settings, 'email_enabled') or not settings.email_enabled:
+                self.logger.debug("Email notifications disabled")
+                return
+            
+            smtp_server = getattr(settings, 'smtp_server', 'smtp.gmail.com')
+            smtp_port = getattr(settings, 'smtp_port', 587)
+            sender_email = getattr(settings, 'sender_email', '')
+            sender_password = getattr(settings, 'sender_password', '')
+            recipient_emails = getattr(settings, 'alert_recipient_emails', [])
+            
+            if not sender_email or not recipient_emails:
+                self.logger.warning("Email configuration incomplete, skipping email notification")
+                return
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = ', '.join(recipient_emails)
+            msg['Subject'] = f"KPI Alert {status}: {alert.dataset_name}"
+            
+            # Email body
+            body = f"""
+                    KPI Prediction System Alert
+
+                    Status: {status}
+                    KPI: {alert.dataset_name}
+                    Severity: {alert.severity.value}
+                    Timestamp: {alert.triggered_at}
+
+                    Actual Value: {int(alert.actual_value)}
+                    Predicted Value: {int(alert.predicted_value)}
+                    Deviation: {alert.deviation_percentage:.2f}%
+                    Threshold: {alert.threshold_percentage:.2f}%
+
+                    Message: {alert.message}
+
+                    Alert ID: {alert.alert_id}
+                    """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Send email
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                if sender_password:
+                    server.login(sender_email, sender_password)
+                server.send_message(msg)
+            
+            self.logger.info(f"Email notification sent for alert {status}: {alert.alert_id}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send email notification: {e}")
+
+        

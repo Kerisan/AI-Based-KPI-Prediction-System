@@ -98,7 +98,7 @@ class AlertConfig(BaseModel):
     """Alert configuration for a dataset."""
     dataset_name: str
     threshold_percentage: float = Field(..., ge=0.1, le=100.0, description="Deviation threshold %")
-    consecutive_minutes: int = Field(..., ge=1, le=60, description="Required consecutive minutes")
+    consecutive_violations: int = Field(..., ge=1, le=60, description="Required consecutive violations")
     enabled: bool = Field(default=True, description="Alert enabled status")
     severity: AlertSeverity = Field(default=AlertSeverity.MEDIUM, description="Alert severity level")
     
@@ -115,7 +115,7 @@ class AlertConfigResponse(BaseModel):
     """Response model for alert configuration."""
     dataset_name: str
     threshold_percentage: float
-    consecutive_minutes: int
+    consecutive_violations: int
     enabled: bool
     severity: AlertSeverity
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -130,9 +130,9 @@ class Alert(BaseModel):
     actual_value: float
     predicted_value: float
     deviation_percentage: float
-    consecutive_count: int
+    consecutive_violations: int
     threshold_percentage: float
-    required_consecutive: int
+    required_consecutive_violations: int
     triggered_at: datetime
     resolved_at: Optional[datetime] = None
     message: str

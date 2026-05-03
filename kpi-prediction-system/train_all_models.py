@@ -65,7 +65,7 @@ def main():
                 dataset_name=kpi['dataset_name'],
                 file_path=kpi['file_path'],
                 target_column=kpi['target_column'],
-                epochs=50,
+                epochs=10,
                 batch_size=32,
                 validation_split=0.2,
                 sequence_length=60

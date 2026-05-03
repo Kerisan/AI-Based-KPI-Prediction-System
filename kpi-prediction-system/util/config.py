@@ -40,12 +40,12 @@ class Settings(BaseSettings):
     
     # Alert Configuration
     default_threshold_percentage: float = Field(
-        default=10.0, 
+        default=30.0, 
         alias="DEFAULT_THRESHOLD_PERCENTAGE"
     )
-    default_consecutive_minutes: int = Field(
+    default_consecutive_violations: int = Field(
         default=5, 
-        alias="DEFAULT_CONSECUTIVE_MINUTES"
+        alias="DEFAULT_CONSECUTIVE_VIOLATIONS"
     )
     alert_check_interval: int = Field(default=60, alias="ALERT_CHECK_INTERVAL")
     
@@ -114,6 +114,16 @@ class Settings(BaseSettings):
     data_collection_interval: int = Field(default=60, alias="DATA_COLLECTION_INTERVAL")
     data_flush_interval: int = Field(default=3600, alias="DATA_FLUSH_INTERVAL")
     auto_train_threshold: int = Field(default=1000, alias="AUTO_TRAIN_THRESHOLD")
+
+    
+    # Email Configuration
+    email_enabled: bool = Field(default=False, alias="EMAIL_ENABLED")
+    smtp_server: str = Field(default="smtp.gmail.com", alias="SMTP_SERVER")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    sender_email: str = Field(default="", alias="SENDER_EMAIL")
+    sender_password: str = Field(default="", alias="SENDER_PASSWORD")
+    alert_recipient_emails: List[str] = Field(default=[], alias="ALERT_RECIPIENT_EMAILS")
+
     
     @field_validator("log_level")
     @classmethod
