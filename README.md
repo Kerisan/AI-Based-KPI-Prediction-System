@@ -2,7 +2,9 @@
 
 ## 🎯 Overview
 
-A production-ready, real-time KPI monitoring and prediction system that uses LSTM deep learning models to predict metrics at per-minute intervals and detect anomalies automatically. Features an interactive startup wizard, threaded monitoring for multiple KPIs, and a live web dashboard.
+Traditional monitoring systems rely on static thresholds, which often fail in dynamic environments. This leads to false alerts or missed incidents. My project solves this using AI-driven KPI prediction and smart alerting.
+
+A real-time KPI monitoring and prediction system that uses LSTM deep learning models to predict metrics at per-minute intervals and detect anomalies automatically. Features an interactive startup wizard, threaded monitoring for multiple KPIs, and a live web dashboard.
 
 ## 🏗️ Architecture
 
